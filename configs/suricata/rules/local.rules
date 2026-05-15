@@ -1,0 +1,126 @@
+# =============================================================================
+#  local.rules — VTS Lab Suricata 인라인 IPS 룰
+#  대상 존: DMZ(10.0.10.0/24) / Intranet(10.0.20.0/24) / DB(10.0.30.0/24)
+#
+#  action: alert  → 탐지만 (IDS 모드)
+#          drop   → 패킷 차단 (IPS 인라인 모드)
+#          reject → 차단 + RST 전송
+# =============================================================================
+
+# ── [1000] SQL Injection 탐지 ─────────────────────────────────────────────────
+# DMZ (HTTP_PORTS: 80) + Intranet WAS (WAS_PORTS: 8080) 모두 커버
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS SQLi UNION SELECT 탐지"; \
+   flow:to_server,established; \
+   http.uri; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0; \
+   sid:1000001; rev:2; classtype:web-application-attack;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS SQLi OR 1=1 탐지"; \
+   flow:to_server,established; \
+   http.uri; content:"OR"; nocase; pcre:"/OR\s+['\"]?1['\"]?\s*=\s*['\"]?1/i"; \
+   sid:1000002; rev:2; classtype:web-application-attack;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS SQLi 싱글쿼트 + 주석 탐지"; \
+   flow:to_server,established; \
+   http.uri; content:"'"; content:"--"; distance:0; \
+   sid:1000003; rev:2; classtype:web-application-attack;)
+
+# WAS POST body SQLi 탐지 (UNION SELECT in body)
+alert http any any -> $INTRANET_NET $WAS_PORTS \
+  (msg:"VTS WAS SQLi UNION SELECT (POST body) 탐지"; \
+   flow:to_server,established; \
+   http.request_body; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0; \
+   sid:1000004; rev:1; classtype:web-application-attack;)
+
+# ── [1100] XSS 탐지 ──────────────────────────────────────────────────────────
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS XSS <script> 태그 탐지"; \
+   flow:to_server,established; \
+   http.uri; content:"<script"; nocase; \
+   sid:1001001; rev:2; classtype:web-application-attack;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS XSS javascript: 탐지"; \
+   flow:to_server,established; \
+   http.uri; content:"javascript:"; nocase; \
+   sid:1001002; rev:2; classtype:web-application-attack;)
+
+# ── [1200] Spring4Shell (CVE-2022-22965) 탐지 ────────────────────────────────
+alert http $EXTERNAL_NET any -> $DMZ_NET any \
+  (msg:"VTS Spring4Shell RCE 시도 탐지 (class.module.classLoader)"; \
+   flow:to_server,established; \
+   http.uri; content:"class.module.classLoader"; nocase; \
+   sid:1002001; rev:2; classtype:web-application-attack;)
+
+alert http $EXTERNAL_NET any -> $DMZ_NET any \
+  (msg:"VTS Spring4Shell POST 파라미터 탐지"; \
+   flow:to_server,established; \
+   http.request_body; content:"class.module.classLoader"; nocase; \
+   sid:1002002; rev:1; classtype:web-application-attack;)
+
+# ── [1300] PHP iconv RCE (CVE-2024-2961) 탐지 ────────────────────────────────
+alert http $EXTERNAL_NET any -> $DMZ_NET any \
+  (msg:"VTS CVE-2024-2961 iconv filter chain 탐지"; \
+   flow:to_server,established; \
+   http.uri; content:"convert.iconv"; nocase; content:"convert.base64"; nocase; distance:0; \
+   sid:1003001; rev:1; classtype:web-application-attack;)
+
+# ── [1400] 디렉터리 트래버설 탐지 ────────────────────────────────────────────
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS Path Traversal ../  탐지"; \
+   flow:to_server,established; \
+   http.uri; content:"../"; \
+   sid:1004001; rev:2; classtype:web-application-attack;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS Path Traversal %2e%2e 탐지 (URL 인코딩)"; \
+   flow:to_server,established; \
+   http.uri; content:"%2e%2e"; nocase; \
+   sid:1004002; rev:2; classtype:web-application-attack;)
+
+# ── [1500] DMZ → DB 직접 접근 차단 (정책 위반) ───────────────────────────────
+drop tcp $DMZ_NET any -> $DB_NET 3306 \
+  (msg:"VTS POLICY DMZ→DB 직접 MySQL 접근 차단"; \
+   flow:to_server,established; \
+   sid:1005001; rev:1; classtype:policy-violation;)
+
+# ── [1600] 포트 스캔 탐지 ────────────────────────────────────────────────────
+alert tcp $EXTERNAL_NET any -> $HOME_NET any \
+  (msg:"VTS 포트 스캔 탐지 (SYN 플래그)"; \
+   flags:S,12; \
+   threshold: type threshold, track by_src, count 20, seconds 3; \
+   sid:1006001; rev:1; classtype:attempted-recon;)
+
+# ── [1700] Reverse Shell 탐지 ─────────────────────────────────────────────────
+alert tcp $HOME_NET any -> $EXTERNAL_NET any \
+  (msg:"VTS Reverse Shell /bin/sh 탐지"; \
+   flow:to_server,established; \
+   content:"/bin/sh"; \
+   sid:1007001; rev:1; classtype:shellcode-detect;)
+
+alert tcp $HOME_NET any -> $EXTERNAL_NET any \
+  (msg:"VTS Reverse Shell bash -i 탐지"; \
+   flow:to_server,established; \
+   content:"bash"; content:"-i"; distance:0; \
+   sid:1007002; rev:1; classtype:shellcode-detect;)
+
+# ── [1800] WAS → DB 비인가 쿼리 모니터링 ────────────────────────────────────
+alert tcp $INTRANET_NET any -> $DB_NET 3306 \
+  (msg:"VTS WAS→DB MySQL 연결 모니터링"; \
+   flow:to_server,established; \
+   content:"|0a|"; \
+   threshold: type limit, track by_src, count 1, seconds 60; \
+   sid:1008001; rev:1; classtype:policy-violation;)
+
+# ── [1900] 외부 → Intranet/DB 직접 접근 차단 ─────────────────────────────────
+drop tcp $EXTERNAL_NET any -> $INTRANET_NET any \
+  (msg:"VTS POLICY 외부→Intranet 직접 접근 차단"; \
+   flow:to_server; \
+   sid:1009001; rev:1; classtype:policy-violation;)
+
+drop tcp $EXTERNAL_NET any -> $DB_NET any \
+  (msg:"VTS POLICY 외부→DB 직접 접근 차단"; \
+   flow:to_server; \
+   sid:1009002; rev:1; classtype:policy-violation;)

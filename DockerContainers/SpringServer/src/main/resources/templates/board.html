@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>게시판</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="navbar">
+    <div class="brand">사내 게시판</div>
+    <nav>
+        <a th:href="@{/board}">게시판</a>
+        <a th:href="@{/post/write}">글쓰기</a>
+        <a th:href="@{/user/profile}">내 정보</a>
+        <a th:href="@{/logout}">로그아웃</a>
+    </nav>
+    <div class="userbox">
+        <b th:text="${currentUser.username}">user</b>
+        <span th:text="' · ' + ${currentUser.department}"></span>
+    </div>
+</div>
+
+<div class="container">
+    <div class="toolbar">
+        <h1 class="page-title">전체 글</h1>
+        <a th:href="@{/post/write}" class="btn btn-primary">+ 글쓰기</a>
+    </div>
+
+    <table class="list">
+        <thead>
+        <tr>
+            <th style="width:60px;">번호</th>
+            <th style="width:90px;">분류</th>
+            <th>제목</th>
+            <th style="width:120px;">작성자</th>
+            <th style="width:80px;">조회</th>
+            <th style="width:120px;">작성일</th>
+        </tr>
+        </thead>
+        <tbody>
+        <tr th:each="p : ${posts}">
+            <td th:text="${p.id}"></td>
+            <td>
+                <span class="cat-badge"
+                      th:classappend="${p.category} == '공지' ? ' notice'
+                                     : (${p.category} == '업무' ? ' work' : '')"
+                      th:text="${p.category}"></span>
+            </td>
+            <td>
+                <a th:href="@{'/post/' + ${p.id}}" th:text="${p.title}"></a>
+            </td>
+            <td th:text="${p.author}"></td>
+            <td th:text="${p.views}"></td>
+            <td th:text="${#temporals.format(p.createdAt, 'MM-dd HH:mm')}"></td>
+        </tr>
+        <tr th:if="${#lists.isEmpty(posts)}">
+            <td colspan="6" style="text-align:center;color:#94a3b8;padding:32px;">
+                등록된 글이 없습니다.
+            </td>
+        </tr>
+        </tbody>
+    </table>
+</div>
+</body>
+</html>

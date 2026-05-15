@@ -1,0 +1,222 @@
+%YAML 1.1
+---
+# =============================================================================
+#  suricata.yaml — VTS Lab 인라인 IPS 설정
+#  모드: AF_PACKET IPS (eth1 ↔ eth2 투명 브리지)
+#  대상: vts-lab.yml  /  VyOS → [Suricata] → sw-dmz
+#  ? 이게 왜 VyOS로 시작하는지 모르겠다 FRR로 시작해서 suricata - sw-dmz로 가야하는대
+# =============================================================================
+
+# ── 기본 변수 ─────────────────────────────────────────────────────────────────
+vars:
+  address-groups:
+    HOME_NET:    "[10.0.10.0/24,10.0.20.0/24]"
+    DMZ_NET:      "10.0.10.0/24"
+    INTRANET_NET: "10.0.20.0/24"
+    DB_NET:       "10.0.30.0/24"
+    EXTERNAL_NET: "!$HOME_NET"
+
+  port-groups:
+    HTTP_PORTS:   "[80,3000]"
+    WAS_PORTS:    "8080"
+    MYSQL_PORT:   "3306"
+    SHELLCODE_PORTS: "!80"
+    ORACLE_PORTS: "1521"
+    SSH_PORTS:    "22"
+    DNP3_PORTS:   "20000"
+    MODBUS_PORTS: "502"
+    FILE_DATA_PORTS: "[$HTTP_PORTS,110,143]"
+    FTP_PORTS:    "21"
+    GENEVE_PORTS: "6081"
+    VXLAN_PORTS:  "4789"
+    TEREDO_PORTS: "3544"
+
+# =============================================================================
+#  AF_PACKET 인라인 IPS 설정
+#  copy-mode: ips  → 패킷을 상대 인터페이스로 복사 (드롭 가능)
+#  veth-sur : router:eth2 방향 (upstream, from router)
+#  veth-dmz : DMZ 방향 (downstream, to DMZ)
+#
+#  Suricata --network host 실행 시 호스트의 veth 이름 직접 참조
+# =============================================================================
+af-packet:
+  - interface: veth-sur
+    cluster-id: 98
+    cluster-type: cluster_flow
+    defrag: no              # inline IPS에서 defrag 비권장
+    use-mmap: yes
+    tpacket-v3: yes
+    copy-mode: ips          # 인라인 IPS: 차단 가능
+    copy-iface: veth-dmz    # 패킷을 veth-dmz 로 전달 (또는 드롭)
+    buffer-size: 134217728  # 128MB (바이트 단위 정수)
+    ring-size: 2048
+    block-size: 65536       # fragmented IP packet 수용 크기
+
+  - interface: veth-dmz
+    cluster-id: 97
+    cluster-type: cluster_flow
+    defrag: no
+    use-mmap: yes
+    tpacket-v3: yes
+    copy-mode: ips          # 인라인 IPS: 차단 가능
+    copy-iface: veth-sur    # 패킷을 veth-sur 로 전달 (또는 드롭)
+    buffer-size: 134217728  # 128MB
+    ring-size: 2048
+    block-size: 65536
+
+# =============================================================================
+#  탐지 엔진
+# =============================================================================
+detect-engine:
+  - profile: medium
+  - custom-values:
+      toclient-groups: 3
+      toserver-groups: 25
+  - sgh-mpm-context: auto
+  - inspection-recursion-limit: 3000
+
+# ── 스트림 재조립 ──────────────────────────────────────────────────────────────
+stream:
+  memcap: 64mb
+  checksum-validation: no   # 가상 환경에서 체크섬 오류 무시
+  inline: yes
+  reassembly:
+    memcap: 256mb
+    depth: 1mb
+    toserver-chunk-size: 2560
+    toclient-chunk-size: 2560
+    randomize-chunk-size: yes
+
+# ── 앱 레이어 파서 ─────────────────────────────────────────────────────────────
+app-layer:
+  protocols:
+    http:
+      enabled: yes
+      libhtp:
+        default-config:
+          personality: IDS
+          request-body-limit: 100kb
+          response-body-limit: 100kb
+    http2:
+      enabled: yes
+    tls:
+      enabled: yes
+      detection-ports:
+        dp: 443
+    mysql:
+      enabled: yes
+    smtp:
+      enabled: yes
+    ssh:
+      enabled: yes
+    dns:
+      tcp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+      udp:
+        enabled: yes
+        detection-ports:
+          dp: 53
+
+# =============================================================================
+#  로깅
+# =============================================================================
+outputs:
+  - fast:
+      enabled: yes
+      filename: /var/log/suricata/fast.log
+      append: yes
+
+  - eve-log:
+      enabled: yes
+      filetype: regular
+      filename: /var/log/suricata/eve.json
+      types:
+        - alert:
+            payload: yes
+            payload-printable: yes
+            packet: yes
+            metadata: yes
+            http-body: yes
+            http-body-printable: yes
+        - http:
+            extended: yes
+        - dns:
+            query: yes
+            answer: yes
+        - tls:
+            extended: yes
+        - files:
+            force-magic: no
+        - netflow:
+
+  - stats:
+      enabled: yes
+      filename: /var/log/suricata/stats.log
+      totals: yes
+      threads: no
+      append: yes
+
+  - syslog:
+      enabled: no
+
+# =============================================================================
+#  룰 파일
+# =============================================================================
+default-rule-path: /etc/suricata/rules
+
+rule-files:
+  - local.rules
+
+# ET Open Rules (suricata-update 로 관리)
+# - suricata.rules
+
+# ── 룰 예외 처리 ───────────────────────────────────────────────────────────────
+suppress:
+  - gen_id: 1
+    sig_id: 2260002     # ET SCAN 오탐 예외 (필요 시 추가)
+
+# =============================================================================
+#  성능 / 스레딩
+# =============================================================================
+threading:
+  set-cpu-affinity: no
+  detect-thread-ratio: 1.0
+
+runmode: workers
+
+# =============================================================================
+#  호스트 테이블 / 기타
+# =============================================================================
+host-os-policy:
+  windows: []
+  bsd: []
+  bsd-right: []
+  old-linux: []
+  linux: [10.0.10.0/24, 10.0.20.0/24, 10.0.30.0/24]
+  old-solaris: []
+  solaris: []
+  hpux10: []
+  hpux11: []
+  irix: []
+  macos: []
+  vista: []
+  windows2k3: []
+
+defrag:
+  memcap: 32mb
+  hash-size: 65536
+  trackers: 65535
+  max-frags: 65535
+  prealloc: yes
+  timeout: 60
+
+host:
+  hash-size: 4096
+  prealloc: 1000
+  memcap: 32mb
+
+unix-command:
+  enabled: auto
+  filename: /var/run/suricata/suricata-command.socket

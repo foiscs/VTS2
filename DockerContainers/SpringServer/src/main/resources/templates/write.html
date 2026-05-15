@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <title>글쓰기</title>
+    <link rel="stylesheet" th:href="@{/css/style.css}">
+</head>
+<body>
+<div class="navbar">
+    <div class="brand">사내 게시판</div>
+    <nav>
+        <a th:href="@{/board}">게시판</a>
+        <a th:href="@{/post/write}">글쓰기</a>
+        <a th:href="@{/user/profile}">내 정보</a>
+        <a th:href="@{/logout}">로그아웃</a>
+    </nav>
+    <div class="userbox">
+        <b th:text="${currentUser.username}">user</b>
+    </div>
+</div>
+
+<div class="container">
+    <div class="card">
+        <h1 class="page-title">새 글 작성</h1>
+
+        <form th:action="@{/post/write}" method="post" th:object="${post}">
+            <div class="form-group">
+                <label>분류</label>
+                <select th:field="*{category}">
+                    <option value="자유">자유</option>
+                    <option value="업무">업무</option>
+                    <option value="공지">공지</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label>제목</label>
+                <input type="text" th:field="*{title}" placeholder="제목" required>
+            </div>
+            <div class="form-group">
+                <label>내용</label>
+                <textarea th:field="*{content}" placeholder="내용을 입력하세요" required></textarea>
+            </div>
+            <div style="display:flex;gap:8px;justify-content:flex-end;">
+                <a th:href="@{/board}" class="btn btn-secondary">취소</a>
+                <button type="submit" class="btn btn-primary">등록</button>
+            </div>
+        </form>
+    </div>
+</div>
+</body>
+</html>

@@ -1,0 +1,64 @@
+name: router-only
+
+mgmt:
+  network: clab-mgmt
+  ipv4-subnet: 172.25.0.0/24
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  Router + Suricata + DMZ + fw-int + Intranet 테스트 토폴로지
+#
+#  트래픽 흐름:
+#    VM (veth-ext: 10.0.1.100/24)
+#        │
+#    router eth1 (10.0.1.1/24)       ← FRR 외부 경계
+#    router eth2 (10.0.10.1/24)
+#        │ veth-sur
+#    [Suricata --network host]        ← AF_PACKET inline IPS
+#        │ veth-dmz → veth-dmz-sw → sw-dmz
+#        ├── dvwa       (10.0.10.10/24)  ← DMZ 웹앱 (port 80)
+#        ├── juice-shop (10.0.10.11/24)  ← DMZ 웹앱 (port 3000)
+#        └── fw-int eth1 (10.0.10.254/24) ← FRR 내부 경계
+#                 │ eth2 (10.0.20.1/24)
+#             sw-intranet
+#                 └── mysqlserver1 (10.0.20.10/24)  ← Intranet MySQL Server (port 3306)
+#
+#  배포: sudo ./deploy-router-only.sh
+# ══════════════════════════════════════════════════════════════════════════════
+
+topology:
+  nodes:
+
+    # ── 외부 경계 라우터 ───────────────────────────────────────────────────────
+    router:
+      kind: linux
+      image: frrouting/frr:latest
+      binds:
+        - configs/frr/router:/etc/frr
+
+    # ── Tier 1 : DMZ 스위치 ───────────────────────────────────────────────────
+    # 사전 생성 필요: 
+    sw-dmz:
+      kind: bridge
+
+    # ── DMZ 웹앱 (DVWA) ───────────────────────────────────────────────────────
+    dvwa:
+      kind: linux
+      image: vulnerables/web-dvwa          
+
+    # ── DMZ 웹앱 (Juice Shop) ─────────────────────────────────────────────────
+    juice-shop:
+      kind: linux
+      image: bkimminich/juice-shop:snapshot   
+
+  links:
+    # ── 외부 (WAN) ────────────────────────────────────────────────────────────
+    - endpoints: ["router:eth1",  "host:veth-ext"]    # 10.0.1.0/24
+
+    # ── router → Suricata ─────────────────────────────────────────────────────
+    - endpoints: ["router:eth2",  "host:veth-sur"]    # Suricata input
+
+    # ── Suricata output(veth-dmz) → sw-dmz : deploy 스크립트에서 수동 연결 ──
+
+    # ── DMZ 멤버 ──────────────────────────────────────────────────────────────
+    - endpoints: ["dvwa:eth1",       "sw-dmz:dmz-dvwa"]       # 10.0.10.10
+    - endpoints: ["juice-shop:eth1", "sw-dmz:dmz-juiceshop"]  # 10.0.10.11
