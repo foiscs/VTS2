@@ -66,7 +66,7 @@ docker run -d \
   -v "$SCRIPT_DIR/configs/suricata":/etc/suricata \
   -v /var/log/suricata:/var/log/suricata \
   "$SURICATA_IMAGE" \
-  -c /etc/suricata/suricata.yaml -v
+  -c /etc/suricata/suricata.yaml --af-packet -v
 
 ok "컨테이너 시작: $SURICATA_CONTAINER"
 echo -e "\n  로그:  docker logs -f $SURICATA_CONTAINER"
