@@ -63,7 +63,7 @@ docker run -d \
   --cap-add NET_RAW \
   --cap-add SYS_NICE \
   --restart unless-stopped \
-  -v "$SCRIPT_DIR/configs/suricata":/etc/suricata:ro \
+  -v "$SCRIPT_DIR/configs/suricata":/etc/suricata \
   -v /var/log/suricata:/var/log/suricata \
   "$SURICATA_IMAGE" \
   -c /etc/suricata/suricata.yaml -v
