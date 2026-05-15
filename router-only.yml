@@ -43,11 +43,6 @@ topology:
     dvwa:
       kind: linux
       image: vulnerables/web-dvwa
-      exec:
-        - ip addr add 10.0.10.10/24 dev eth1
-        - ip link set eth1 up
-        - ip route del default 2>/dev/null || true
-        - ip route add default via 10.0.10.1
 
   links:
     # ── 외부 (WAN) : VM 역할 ──────────────────────────────────────────────────

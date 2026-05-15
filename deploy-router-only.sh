@@ -21,6 +21,7 @@ TOPO_FILE="$SCRIPT_DIR/router-only.yml"
 VETH_EXT="veth-ext"          # clab 생성: router:eth1 ↔ host:veth-ext
 IP_VETH_EXT="10.0.1.100/24"
 IP_ROUTER_ETH1="10.0.1.1"
+TOPO_NAME="router-only"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'; BOLD='\033[1m'
 ok()  { echo -e "  ${GREEN}✔${NC} $*"; }
@@ -71,11 +72,32 @@ else
   warn "FRR 기동 중일 수 있습니다 — 잠시 후 재시도:  ping $IP_ROUTER_ETH1"
 fi
 
+# ── 4. DMZ 컨테이너 네트워크 설정 (nsenter) ─────────────────────────────────
+# clab 토폴로지에 DMZ 노드가 있을 때만 실행
+setup_container_net() {
+  local node="$1" ip="$2" gw="$3"
+  local cname="clab-${TOPO_NAME}-${node}"
+
+  docker inspect "$cname" &>/dev/null || return 0  # 노드 없으면 건너뜀
+
+  echo -e "\n${BOLD}[4] $node 네트워크 설정 (nsenter)${NC}"
+  local pid
+  pid=$(docker inspect -f '{{.State.Pid}}' "$cname")
+
+  nsenter -t "$pid" -n -- ip addr replace "$ip" dev eth1
+  nsenter -t "$pid" -n -- ip link set eth1 up
+  nsenter -t "$pid" -n -- ip route replace default via "$gw"
+  ok "$node  eth1=$ip  gw=$gw"
+}
+
+setup_container_net "dvwa"       "10.0.10.10/24" "10.0.10.1"
+#setup_container_net "juice-shop" "10.0.10.11/24" "10.0.10.1"
+
 # ── 완료 ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "  ${BOLD}생성된 인터페이스:${NC}"
-ip -br link show "$VETH_EXT"                           2>/dev/null | awk '{print "    veth-ext  "$0}' || true
-ip -br link show "veth-sur"                            2>/dev/null | awk '{print "    veth-sur  "$0}' || true
+ip -br link show "$VETH_EXT" 2>/dev/null | awk '{print "    veth-ext  "$0}' || true
+ip -br link show "veth-sur"  2>/dev/null | awk '{print "    veth-sur  "$0}' || true
 echo ""
 echo -e "  다음 단계:  ${BOLD}sudo ./start-suricata.sh${NC}"
 echo ""
