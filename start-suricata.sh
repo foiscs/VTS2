@@ -10,7 +10,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
-SURICATA_IMAGE="vts2-suricata:latest"
+SURICATA_IMAGE="jasonish/suricata:8.0.4-amd64"
 SURICATA_CONTAINER="suricata-ips"
 VETH_SUR="veth-sur"
 VETH_DMZ="veth-dmz"
@@ -29,7 +29,8 @@ echo -e "\n${BOLD}[1/3] veth-sur 확인${NC}"
 ip link show "$VETH_SUR" &>/dev/null \
   || die "veth-sur 없음 → 먼저 실행:  sudo ./deploy-router-only.sh"
 ip link set "$VETH_SUR" up
-ok "veth-sur UP"
+ip link set "$VETH_SUR" promisc on
+ok "veth-sur UP + promisc"
 
 # ── 2. veth-dmz 없으면 생성 ──────────────────────────────────────────────────
 echo -e "\n${BOLD}[2/3] veth-dmz 확인 / 생성${NC}"
@@ -38,8 +39,9 @@ if ip link show "$VETH_DMZ" &>/dev/null; then
 else
   ip link add "$VETH_DMZ" type veth peer name "$VETH_DMZ_SW"
   ip link set "$VETH_DMZ"    up
+  ip link set "$VETH_DMZ"    promisc on
   ip link set "$VETH_DMZ_SW" up
-  ok "veth-dmz ↔ veth-dmz-sw 생성"
+  ok "veth-dmz ↔ veth-dmz-sw 생성 + promisc"
 
   if ip link show "$SW_DMZ_BRIDGE" &>/dev/null; then
     ip link set "$VETH_DMZ_SW" master "$SW_DMZ_BRIDGE"
@@ -61,11 +63,10 @@ docker run -d \
   --cap-add NET_RAW \
   --cap-add SYS_NICE \
   --restart unless-stopped \
-  -e SURICATA_IFACE1="$VETH_SUR" \
-  -e SURICATA_IFACE2="$VETH_DMZ" \
   -v "$SCRIPT_DIR/configs/suricata":/etc/suricata:ro \
   -v /var/log/suricata:/var/log/suricata \
-  "$SURICATA_IMAGE"
+  "$SURICATA_IMAGE" \
+  -c /etc/suricata/suricata.yaml -v
 
 ok "컨테이너 시작: $SURICATA_CONTAINER"
 echo -e "\n  로그:  docker logs -f $SURICATA_CONTAINER"
