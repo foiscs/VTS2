@@ -52,6 +52,10 @@ ip addr add "$IP_VETH_EXT" dev "$VETH_EXT"
 ip link set "$VETH_EXT" up
 ok "veth-ext  $IP_VETH_EXT"
 
+# DMZ 서브넷 경로: 호스트 → router:eth1 → router → eth2(Suricata)
+ip route replace 10.0.10.0/24 via 10.0.1.1 dev "$VETH_EXT"
+ok "route  10.0.10.0/24 via 10.0.1.1 dev $VETH_EXT"
+
 # ── 3. router 연결 확인 ──────────────────────────────────────────────────────
 echo -e "\n${BOLD}[3/3] router 연결 확인${NC}"
 printf "  ping %s ... " "$IP_ROUTER_ETH1"

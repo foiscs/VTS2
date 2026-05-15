@@ -31,6 +31,23 @@ topology:
       image: frrouting/frr:latest
       binds:
         - configs/frr/router:/etc/frr
+      sysctls:
+        net.ipv4.ip_forward: 1
+        net.ipv6.conf.all.forwarding: 1
+
+    # ── DMZ 스위치 (Linux bridge) ─────────────────────────────────────────────
+    sw-dmz:
+      kind: bridge
+
+    # ── DVWA (DMZ 웹앱) ───────────────────────────────────────────────────────
+    dvwa:
+      kind: linux
+      image: vulnerables/web-dvwa
+      exec:
+        - ip addr add 10.0.10.10/24 dev eth1
+        - ip link set eth1 up
+        - ip route del default 2>/dev/null || true
+        - ip route add default via 10.0.10.1
 
   links:
     # ── 외부 (WAN) : VM 역할 ──────────────────────────────────────────────────
@@ -39,4 +56,7 @@ topology:
     # ── router → Suricata 입력 ───────────────────────────────────────────────
     - endpoints: ["router:eth2", "host:veth-sur"]   # 10.0.10.0/24  AF_PACKET 입력
 
-    # ── Suricata 출력(veth-dmz) → sw-dmz : start-suricata.sh 에서 수동 생성 ─
+    # ── Suricata 출력(veth-dmz) → sw-dmz : start-suricata.sh 에서 수동 연결 ─
+
+    # ── DMZ 멤버 ──────────────────────────────────────────────────────────────
+    - endpoints: ["dvwa:eth1", "sw-dmz:dmz-dvwa"]  # 10.0.10.10
