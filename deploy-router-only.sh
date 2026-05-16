@@ -38,8 +38,23 @@ if [ "${1:-}" = "--destroy" ]; then
   echo "정리 중..."
   clab destroy -t "$TOPO_FILE" --cleanup 2>/dev/null && ok "clab 제거" || ok "없음"
   ip addr flush dev "$VETH_EXT" 2>/dev/null          && ok "veth-ext 플러시" || ok "없음"
+  for br in sw-dmz sw-intranet; do
+    ip link delete "$br" 2>/dev/null && ok "$br 제거" || ok "$br 없음"
+  done
   exit 0
 fi
+
+# ── 0. bridge 사전 생성 ───────────────────────────────────────────────────────
+echo -e "\n${BOLD}[0/3] bridge 사전 생성${NC}"
+for br in sw-dmz sw-intranet; do
+  if ip link show "$br" &>/dev/null; then
+    ok "$br 존재 (건너뜀)"
+  else
+    ip link add "$br" type bridge
+    ip link set "$br" up
+    ok "$br 생성"
+  fi
+done
 
 # ── 1. clab deploy ───────────────────────────────────────────────────────────
 echo -e "\n${BOLD}[1/3] clab deploy${NC}"
