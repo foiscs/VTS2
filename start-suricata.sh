@@ -37,11 +37,15 @@ echo -e "\n${BOLD}[2/3] veth-dmz 확인 / 생성${NC}"
 if ip link show "$VETH_DMZ" &>/dev/null; then
   ok "veth-dmz 존재 (건너뜀)"
 else
+  # veth-sur MTU에 맞춤 (ContainerLab 기본값 9500)
+  MTU=$(ip link show "$VETH_SUR" | grep -oP 'mtu \K[0-9]+')
   ip link add "$VETH_DMZ" type veth peer name "$VETH_DMZ_SW"
+  ip link set "$VETH_DMZ"    mtu "$MTU"
+  ip link set "$VETH_DMZ_SW" mtu "$MTU"
   ip link set "$VETH_DMZ"    up
   ip link set "$VETH_DMZ"    promisc on
   ip link set "$VETH_DMZ_SW" up
-  ok "veth-dmz ↔ veth-dmz-sw 생성 + promisc"
+  ok "veth-dmz ↔ veth-dmz-sw 생성 + promisc  (MTU $MTU)"
 
   if ip link show "$SW_DMZ_BRIDGE" &>/dev/null; then
     ip link set "$VETH_DMZ_SW" master "$SW_DMZ_BRIDGE"
