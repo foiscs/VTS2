@@ -42,7 +42,7 @@ topology:
     # ── DVWA (DMZ 웹앱) ───────────────────────────────────────────────────────
     dvwa:
       kind: linux
-      image: vulnerables/web-dvwa
+      image: vulnerables/web-dvwa:local
 
   links:
     # ── 외부 (WAN) : VM 역할 ──────────────────────────────────────────────────
