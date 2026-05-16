@@ -91,7 +91,66 @@ setup_container_net() {
 }
 
 setup_container_net "dvwa"       "10.0.10.10/24" "10.0.10.1"
-#setup_container_net "juice-shop" "10.0.10.11/24" "10.0.10.1"
+
+# DVWA: Intranet 경로 추가 (fw-int 경유)
+setup_extra_route() {
+  local node="$1" dest="$2" gw="$3"
+  local cname="clab-${TOPO_NAME}-${node}"
+  docker inspect "$cname" &>/dev/null || return 0
+  local pid
+  pid=$(docker inspect -f '{{.State.Pid}}' "$cname")
+  nsenter -t "$pid" -n -- ip route replace "$dest" via "$gw"
+  ok "$node  route $dest via $gw"
+}
+setup_extra_route "dvwa" "10.0.20.0/24" "10.0.10.254"
+
+# fw-int: eth1/eth2 IP 설정 (FRR frr.conf가 라우팅 담당)
+setup_fwint_net() {
+  local cname="clab-${TOPO_NAME}-fw-int"
+  docker inspect "$cname" &>/dev/null || return 0
+
+  echo -e "\n${BOLD}[5] fw-int 네트워크 + 방화벽 설정${NC}"
+  local pid
+  pid=$(docker inspect -f '{{.State.Pid}}' "$cname")
+
+  nsenter -t "$pid" -n -- ip addr replace "10.0.10.254/24" dev eth1
+  nsenter -t "$pid" -n -- ip link set eth1 up
+  nsenter -t "$pid" -n -- ip addr replace "10.0.20.1/24"  dev eth2
+  nsenter -t "$pid" -n -- ip link set eth2 up
+  ok "fw-int  eth1=10.0.10.254/24  eth2=10.0.20.1/24"
+
+  # ── iptables 방화벽 정책 ────────────────────────────────────────────────
+  # FORWARD 체인: 기본 DROP
+  docker exec "$cname" iptables -P FORWARD DROP
+
+  # DVWA → MySQL (10.0.20.10:3306) ALLOW
+  docker exec "$cname" iptables -A FORWARD \
+    -s 10.0.10.10 -d 10.0.20.10 -p tcp --dport 3306 -j ACCEPT
+
+  # MySQL → DVWA (ESTABLISHED 응답) ALLOW
+  docker exec "$cname" iptables -A FORWARD \
+    -s 10.0.20.10 -d 10.0.10.10 -p tcp --sport 3306 \
+    -m state --state ESTABLISHED -j ACCEPT
+
+  ok "fw-int  iptables: DVWA→MySQL ALLOW, 그 외 FORWARD DROP"
+}
+setup_fwint_net
+
+# mysqlserver1: eth1 IP 설정
+setup_mysql_net() {
+  local cname="clab-${TOPO_NAME}-mysqlserver1"
+  docker inspect "$cname" &>/dev/null || return 0
+
+  echo -e "\n${BOLD}[6] mysqlserver1 네트워크 설정${NC}"
+  local pid
+  pid=$(docker inspect -f '{{.State.Pid}}' "$cname")
+
+  nsenter -t "$pid" -n -- ip addr replace "10.0.20.10/24" dev eth1
+  nsenter -t "$pid" -n -- ip link set eth1 up
+  nsenter -t "$pid" -n -- ip route replace default via "10.0.20.1"
+  ok "mysqlserver1  eth1=10.0.20.10/24  gw=10.0.20.1"
+}
+setup_mysql_net
 
 # ── 완료 ─────────────────────────────────────────────────────────────────────
 echo ""

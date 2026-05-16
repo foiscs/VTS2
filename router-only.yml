@@ -5,21 +5,21 @@ mgmt:
   ipv4-subnet: 172.25.0.0/24
 
 # ══════════════════════════════════════════════════════════════════════════════
-#  PHASE 1: Router 단독 토폴로지  (Suricata / DMZ 는 별도 스크립트로 추가)
-#
 #  트래픽 흐름:
 #    VM (veth-ext: 10.0.1.100/24)
 #        │
-#    router eth1 (10.0.1.1/24)       ← FRR 외부 경계
+#    router eth1 (10.0.1.1/24)         ← FRR 외부 경계
 #    router eth2 (10.0.10.1/24)
-#        │ host:veth-sur              ← Suricata 입력 (start-suricata.sh)
-#    [Suricata --network host]        ← AF_PACKET inline IPS
-#        │ host:veth-dmz              ← 수동 생성 (start-suricata.sh)
-#        └── sw-dmz (Linux bridge)   ← 다음 단계에서 DMZ 노드 추가
+#        │ host:veth-sur
+#    [Suricata --network host]          ← AF_PACKET inline IPS
+#        │ host:veth-dmz → sw-dmz
+#        ├── dvwa       (10.0.10.10)   ← DMZ 웹앱
+#        └── fw-int eth1 (10.0.10.254) ← FRR 내부 경계 방화벽
+#                 │ eth2 (10.0.20.1)
+#             sw-intranet
+#                 └── mysqlserver1 (10.0.20.10)  ← Intranet DB
 #
-#  단계별 배포:
-#    1.  sudo ./deploy-router-only.sh   ← clab (router만)
-#    2.  sudo ./start-suricata.sh       ← veth-dmz 생성 + Suricata 시작
+#  배포: sudo ./deploy-router-only.sh && sudo ./start-suricata.sh
 # ══════════════════════════════════════════════════════════════════════════════
 
 topology:
@@ -35,7 +35,7 @@ topology:
         net.ipv4.ip_forward: 1
         net.ipv6.conf.all.forwarding: 1
 
-    # ── DMZ 스위치 (Linux bridge) ─────────────────────────────────────────────
+    # ── DMZ 스위치 ────────────────────────────────────────────────────────────
     sw-dmz:
       kind: bridge
 
@@ -43,6 +43,31 @@ topology:
     dvwa:
       kind: linux
       image: vulnerables/web-dvwa:local
+      binds:
+        - DockerContainers/DVWA/config.inc.php:/var/www/html/config/config.inc.php
+
+    # ── fw-int (DMZ/Intranet 경계 FRR 방화벽) ────────────────────────────────
+    fw-int:
+      kind: linux
+      image: frrouting/frr:latest
+      binds:
+        - configs/frr/fw-int:/etc/frr
+      sysctls:
+        net.ipv4.ip_forward: 1
+
+    # ── Intranet 스위치 ───────────────────────────────────────────────────────
+    sw-intranet:
+      kind: bridge
+
+    # ── MySQL 서버 (Intranet DB) ──────────────────────────────────────────────
+    mysqlserver1:
+      kind: linux
+      image: mysql:8.0
+      env:
+        MYSQL_ROOT_PASSWORD: rootpass
+        MYSQL_DATABASE: dvwa
+        MYSQL_USER: dvwa
+        MYSQL_PASSWORD: dvwapass
 
   links:
     # ── 외부 (WAN) : VM 역할 ──────────────────────────────────────────────────
@@ -54,4 +79,9 @@ topology:
     # ── Suricata 출력(veth-dmz) → sw-dmz : start-suricata.sh 에서 수동 연결 ─
 
     # ── DMZ 멤버 ──────────────────────────────────────────────────────────────
-    - endpoints: ["dvwa:eth1", "sw-dmz:dmz-dvwa"]  # 10.0.10.10
+    - endpoints: ["dvwa:eth1",    "sw-dmz:dmz-dvwa"]    # 10.0.10.10
+    - endpoints: ["fw-int:eth1",  "sw-dmz:dmz-fwint"]   # 10.0.10.254
+
+    # ── Intranet 멤버 ─────────────────────────────────────────────────────────
+    - endpoints: ["fw-int:eth2",       "sw-intranet:intranet-fwint"]   # 10.0.20.1
+    - endpoints: ["mysqlserver1:eth1", "sw-intranet:intranet-mysql"]   # 10.0.20.10
