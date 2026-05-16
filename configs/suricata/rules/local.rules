@@ -93,18 +93,18 @@ alert tcp $EXTERNAL_NET any -> $HOME_NET any \
    threshold: type threshold, track by_src, count 20, seconds 3; \
    sid:1006001; rev:1; classtype:attempted-recon;)
 
-# ── [1700] Reverse Shell 탐지 ─────────────────────────────────────────────────
-alert tcp $HOME_NET any -> $EXTERNAL_NET any \
-  (msg:"VTS Reverse Shell /bin/sh 탐지"; \
-   flow:to_server,established; \
-   content:"/bin/sh"; \
-   sid:1007001; rev:1; classtype:shellcode-detect;)
+# ── [1700] Reverse Shell / 아웃바운드 차단 ────────────────────────────────────
+# content 매칭은 쉘 세션에 무의미 → DMZ에서 외부로 나가는 비HTTP 아웃바운드 자체를 차단
+drop tcp $HOME_NET any -> $EXTERNAL_NET any \
+  (msg:"VTS DMZ→External 비HTTP 아웃바운드 차단 (Reverse Shell 방지)"; \
+   flow:to_server; \
+   sid:1007001; rev:2; classtype:shellcode-detect;)
 
-alert tcp $HOME_NET any -> $EXTERNAL_NET any \
-  (msg:"VTS Reverse Shell bash -i 탐지"; \
-   flow:to_server,established; \
-   content:"bash"; content:"-i"; distance:0; \
-   sid:1007002; rev:1; classtype:shellcode-detect;)
+# HTTP/HTTPS 아웃바운드는 허용 (웹 요청 등 정상 트래픽)
+pass tcp $HOME_NET any -> $EXTERNAL_NET [80,443] \
+  (msg:"VTS DMZ→External HTTP/HTTPS 허용"; \
+   flow:to_server; \
+   sid:1007003; rev:1;)
 
 # ── [1800] WAS → DB 비인가 쿼리 모니터링 ────────────────────────────────────
 alert tcp $INTRANET_NET any -> $DB_NET 3306 \
