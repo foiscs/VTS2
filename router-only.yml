@@ -13,11 +13,14 @@ mgmt:
 #        │ host:veth-sur
 #    [Suricata --network host]          ← AF_PACKET inline IPS
 #        │ host:veth-dmz → sw-dmz
-#        ├── dvwa       (10.0.10.10)   ← DMZ 웹앱
-#        └── fw-int eth1 (10.0.10.254) ← FRR 내부 경계 방화벽
+#        ├── dvwa        (10.0.10.10)  ← DMZ 웹앱
+#        └── fw-int eth1 (10.0.10.254) ← 내부 경계 방화벽
 #                 │ eth2 (10.0.20.1)
 #             sw-intranet
-#                 └── mysqlserver1 (10.0.20.10)  ← Intranet DB
+#                 └── was (ProxySQL, 10.0.20.10)  ← WAS (MySQL 프록시)
+#                 │ eth3 (10.0.30.1)
+#             sw-db
+#                 └── mysqlserver1 (10.0.30.10)   ← DB 존
 #
 #  배포: sudo ./deploy-router-only.sh && sudo ./start-suricata.sh
 # ══════════════════════════════════════════════════════════════════════════════
@@ -46,7 +49,7 @@ topology:
       binds:
         - DockerContainers/DVWA/config.inc.php:/var/www/html/config/config.inc.php
 
-    # ── fw-int (DMZ/Intranet 경계 FRR 방화벽) ────────────────────────────────
+    # ── fw-int (DMZ/Intranet/DB 경계 방화벽) ─────────────────────────────────
     fw-int:
       kind: linux
       image: frrouting/frr:latest
@@ -59,7 +62,18 @@ topology:
     sw-intranet:
       kind: bridge
 
-    # ── MySQL 서버 (Intranet DB) ──────────────────────────────────────────────
+    # ── WAS (ProxySQL — MySQL 프록시) ─────────────────────────────────────────
+    was:
+      kind: linux
+      image: proxysql/proxysql:latest
+      binds:
+        - configs/proxysql/proxysql.cnf:/etc/proxysql.cnf
+
+    # ── DB 스위치 ─────────────────────────────────────────────────────────────
+    sw-db:
+      kind: bridge
+
+    # ── MySQL 서버 (DB 존) ────────────────────────────────────────────────────
     mysqlserver1:
       kind: linux
       image: mysql:8.0
@@ -80,9 +94,13 @@ topology:
     # ── Suricata 출력(veth-dmz) → sw-dmz : start-suricata.sh 에서 수동 연결 ─
 
     # ── DMZ 멤버 ──────────────────────────────────────────────────────────────
-    - endpoints: ["dvwa:eth1",    "sw-dmz:dmz-dvwa"]    # 10.0.10.10
-    - endpoints: ["fw-int:eth1",  "sw-dmz:dmz-fwint"]   # 10.0.10.254
+    - endpoints: ["dvwa:eth1",   "sw-dmz:dmz-dvwa"]   # 10.0.10.10
+    - endpoints: ["fw-int:eth1", "sw-dmz:dmz-fwint"]  # 10.0.10.254
 
     # ── Intranet 멤버 ─────────────────────────────────────────────────────────
-    - endpoints: ["fw-int:eth2",       "sw-intranet:intranet-fwint"]   # 10.0.20.1
-    - endpoints: ["mysqlserver1:eth1", "sw-intranet:intranet-mysql"]   # 10.0.20.10
+    - endpoints: ["fw-int:eth2", "sw-intranet:intranet-fwint"]  # 10.0.20.1
+    - endpoints: ["was:eth1",    "sw-intranet:intranet-was"]    # 10.0.20.10
+
+    # ── DB 멤버 ───────────────────────────────────────────────────────────────
+    - endpoints: ["fw-int:eth3",       "sw-db:db-fwint"]   # 10.0.30.1
+    - endpoints: ["mysqlserver1:eth1", "sw-db:db-mysql"]   # 10.0.30.10
