@@ -15,7 +15,7 @@ $DBMS = 'MySQL';
 # If you are using MariaDB then you cannot use root, you must use create a dedicated DVWA user.
 #   See README.md for more information on this.
 $_DVWA = array();
-$_DVWA[ 'db_server' ]   = '10.0.20.10';
+$_DVWA[ 'db_server' ]   = '10.0.20.10';   # WAS(ProxySQL) — 실제 MySQL은 10.0.30.10
 $_DVWA[ 'db_database' ] = 'dvwa';
 $_DVWA[ 'db_user' ]     = 'dvwa';
 $_DVWA[ 'db_password' ] = 'dvwapass';

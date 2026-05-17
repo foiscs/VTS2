@@ -1,13 +1,22 @@
 package com.reznok.helloworld.domain;
 
+import javax.persistence.*;
 import java.time.LocalDateTime;
 
+@Entity
+@Table(name = "spring_post")
 public class Post {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
     private String title;
+
+    @Column(columnDefinition = "TEXT")
     private String content;
-    private String author;     // username of the writer
+
+    private String author;
     private Long authorId;
     private String category;
     private LocalDateTime createdAt;
