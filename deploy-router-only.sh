@@ -118,8 +118,11 @@ setup_extra_route() {
 
 # DVWA: eth1=10.0.10.10, gw=10.0.10.1(router)
 setup_container_net "dvwa" "10.0.10.10/24" "10.0.10.1"
-# DVWA → DB 존 경로 (fw-int 경유)
 setup_extra_route "dvwa" "10.0.20.0/24" "10.0.10.254"
+
+# Spring: eth1=10.0.10.20, gw=10.0.10.1(router)
+setup_container_net "spring" "10.0.10.20/24" "10.0.10.1"
+setup_extra_route "spring" "10.0.20.0/24" "10.0.10.254"
 
 # fw-int: eth1(DMZ) + eth2(Intranet) + eth3(DB) + iptables
 setup_fwint_net() {
@@ -144,20 +147,25 @@ setup_fwint_net() {
   # DVWA(10.0.10.10) → WAS(10.0.20.10):3306 ALLOW
   docker exec "$cname" iptables -A FORWARD \
     -s 10.0.10.10 -d 10.0.20.10 -p tcp --dport 3306 -j ACCEPT
-  # WAS → DVWA ESTABLISHED 응답 ALLOW
   docker exec "$cname" iptables -A FORWARD \
     -s 10.0.20.10 -d 10.0.10.10 -p tcp --sport 3306 \
+    -m state --state ESTABLISHED -j ACCEPT
+
+  # Spring(10.0.10.20) → WAS(10.0.20.10):3306 ALLOW
+  docker exec "$cname" iptables -A FORWARD \
+    -s 10.0.10.20 -d 10.0.20.10 -p tcp --dport 3306 -j ACCEPT
+  docker exec "$cname" iptables -A FORWARD \
+    -s 10.0.20.10 -d 10.0.10.20 -p tcp --sport 3306 \
     -m state --state ESTABLISHED -j ACCEPT
 
   # WAS(10.0.20.10) → MySQL(10.0.30.10):3306 ALLOW
   docker exec "$cname" iptables -A FORWARD \
     -s 10.0.20.10 -d 10.0.30.10 -p tcp --dport 3306 -j ACCEPT
-  # MySQL → WAS ESTABLISHED 응답 ALLOW
   docker exec "$cname" iptables -A FORWARD \
     -s 10.0.30.10 -d 10.0.20.10 -p tcp --sport 3306 \
     -m state --state ESTABLISHED -j ACCEPT
 
-  ok "fw-int  iptables: DVWA→WAS:3306, WAS→MySQL:3306 ALLOW, 그 외 FORWARD DROP"
+  ok "fw-int  iptables: DVWA→WAS, Spring→WAS, WAS→MySQL ALLOW, 그 외 FORWARD DROP"
 }
 setup_fwint_net
 

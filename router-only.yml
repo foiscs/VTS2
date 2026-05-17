@@ -13,7 +13,8 @@ mgmt:
 #        │ host:veth-sur
 #    [Suricata --network host]          ← AF_PACKET inline IPS
 #        │ host:veth-dmz → sw-dmz
-#        ├── dvwa        (10.0.10.10)  ← DMZ 웹앱
+#        ├── dvwa        (10.0.10.10)  ← DMZ 웹앱 (DVWA)
+#        ├── spring      (10.0.10.20)  ← DMZ Spring 서버 (포트 8080)
 #        └── fw-int eth1 (10.0.10.254) ← 내부 경계 방화벽
 #                 │ eth2 (10.0.20.1)
 #             sw-intranet
@@ -23,6 +24,7 @@ mgmt:
 #                 └── mysqlserver1 (10.0.30.10)   ← DB 존
 #
 #  배포: sudo ./deploy-router-only.sh && sudo ./start-suricata.sh
+#  Spring 이미지 빌드: cd DockerContainers/SpringServer && docker build -t vts-spring:latest .
 # ══════════════════════════════════════════════════════════════════════════════
 
 topology:
@@ -48,6 +50,11 @@ topology:
       image: vulnerables/web-dvwa:local
       binds:
         - DockerContainers/DVWA/config.inc.php:/var/www/html/config/config.inc.php
+
+    # ── Spring 서버 (DMZ, 포트 8080) ─────────────────────────────────────────
+    spring:
+      kind: linux
+      image: vts-spring:latest
 
     # ── fw-int (DMZ/Intranet/DB 경계 방화벽) ─────────────────────────────────
     fw-int:
@@ -78,6 +85,8 @@ topology:
       kind: linux
       image: mysql:8.0
       cmd: --default-authentication-plugin=mysql_native_password
+      binds:
+        - DockerContainers/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
       env:
         MYSQL_ROOT_PASSWORD: rootpass
         MYSQL_DATABASE: dvwa
@@ -94,8 +103,9 @@ topology:
     # ── Suricata 출력(veth-dmz) → sw-dmz : start-suricata.sh 에서 수동 연결 ─
 
     # ── DMZ 멤버 ──────────────────────────────────────────────────────────────
-    - endpoints: ["dvwa:eth1",   "sw-dmz:dmz-dvwa"]   # 10.0.10.10
-    - endpoints: ["fw-int:eth1", "sw-dmz:dmz-fwint"]  # 10.0.10.254
+    - endpoints: ["dvwa:eth1",   "sw-dmz:dmz-dvwa"]    # 10.0.10.10
+    - endpoints: ["spring:eth1", "sw-dmz:dmz-spring"]  # 10.0.10.20
+    - endpoints: ["fw-int:eth1", "sw-dmz:dmz-fwint"]   # 10.0.10.254
 
     # ── Intranet 멤버 ─────────────────────────────────────────────────────────
     - endpoints: ["fw-int:eth2", "sw-intranet:intranet-fwint"]  # 10.0.20.1

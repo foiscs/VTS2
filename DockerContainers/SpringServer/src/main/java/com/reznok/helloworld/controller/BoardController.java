@@ -31,7 +31,7 @@ public class BoardController {
         Optional<User> me = sessionHelper.currentUser(req);
         if (!me.isPresent()) return "redirect:/login";
 
-        List<Post> posts = postRepository.findAll();
+        List<Post> posts = postRepository.findAllByOrderByIdDesc();
         model.addAttribute("posts", posts);
         model.addAttribute("currentUser", me.get());
         return "board";

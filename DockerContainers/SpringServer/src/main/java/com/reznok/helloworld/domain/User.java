@@ -1,10 +1,21 @@
 package com.reznok.helloworld.domain;
 
+import javax.persistence.*;
+
+@Entity
+@Table(name = "spring_user")
 public class User {
 
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    @Column(unique = true, nullable = false)
     private String username;
+
+    @Column(nullable = false)
     private String password;
+
     private String email;
     private String department;
     private String role; // "USER" or "ADMIN"
