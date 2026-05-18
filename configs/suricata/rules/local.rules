@@ -81,7 +81,7 @@ alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
    sid:1004002; rev:2; classtype:web-application-attack;)
 
 # ── [1500] DMZ → DB 직접 접근 차단 (정책 위반) ───────────────────────────────
-drop tcp $DMZ_NET any -> $DB_NET 3306 \
+alert tcp $DMZ_NET any -> $DB_NET 3306 \
   (msg:"VTS POLICY DMZ→DB 직접 MySQL 접근 차단"; \
    flow:to_server,established; \
    sid:1005001; rev:1; classtype:policy-violation;)
@@ -95,7 +95,7 @@ alert tcp $EXTERNAL_NET any -> $HOME_NET any \
 
 # ── [1700] Reverse Shell / 아웃바운드 차단 ────────────────────────────────────
 # content 매칭은 쉘 세션에 무의미 → DMZ에서 외부로 나가는 비HTTP 아웃바운드 자체를 차단
-drop tcp $HOME_NET any -> $EXTERNAL_NET any \
+alert tcp $HOME_NET any -> $EXTERNAL_NET any \
   (msg:"VTS DMZ→External 비HTTP 아웃바운드 차단 (Reverse Shell 방지)"; \
    flow:to_server; \
    sid:1007001; rev:2; classtype:shellcode-detect;)
@@ -115,12 +115,12 @@ alert tcp $INTRANET_NET any -> $DB_NET 3306 \
    sid:1008001; rev:1; classtype:policy-violation;)
 
 # ── [1900] 외부 → Intranet/DB 직접 접근 차단 ─────────────────────────────────
-drop tcp $EXTERNAL_NET any -> $INTRANET_NET any \
+alert tcp $EXTERNAL_NET any -> $INTRANET_NET any \
   (msg:"VTS POLICY 외부→Intranet 직접 접근 차단"; \
    flow:to_server; \
    sid:1009001; rev:1; classtype:policy-violation;)
 
-drop tcp $EXTERNAL_NET any -> $DB_NET any \
+alert tcp $EXTERNAL_NET any -> $DB_NET any \
   (msg:"VTS POLICY 외부→DB 직접 접근 차단"; \
    flow:to_server; \
    sid:1009002; rev:1; classtype:policy-violation;)
