@@ -34,6 +34,25 @@ alert http any any -> $INTRANET_NET $WAS_PORTS \
    http.request_body; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0; \
    sid:1000004; rev:1; classtype:web-application-attack;)
 
+# POST body SQLi 탐지 (DMZ HTTP_PORTS 포함)
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS SQLi UNION SELECT (POST body) 탐지"; \
+   flow:to_server,established; \
+   http.request_body; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0; \
+   sid:1000005; rev:1; classtype:web-application-attack;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS SQLi OR 1=1 (POST body) 탐지"; \
+   flow:to_server,established; \
+   http.request_body; content:"OR"; nocase; pcre:"/OR\s+['\"]?1['\"]?\s*=\s*['\"]?1/i"; \
+   sid:1000006; rev:1; classtype:web-application-attack;)
+
+alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
+  (msg:"VTS SQLi 싱글쿼트 + 주석 (POST body) 탐지"; \
+   flow:to_server,established; \
+   http.request_body; content:"'"; content:"--"; distance:0; \
+   sid:1000007; rev:1; classtype:web-application-attack;)
+
 # ── [1100] XSS 탐지 ──────────────────────────────────────────────────────────
 alert http $EXTERNAL_NET any -> $HOME_NET [$HTTP_PORTS,$WAS_PORTS] \
   (msg:"VTS XSS <script> 태그 탐지"; \
