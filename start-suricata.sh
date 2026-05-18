@@ -34,11 +34,22 @@ ok "veth-sur UP + promisc"
 
 # ── 2. veth-dmz 없으면 생성 ──────────────────────────────────────────────────
 echo -e "\n${BOLD}[2/3] veth-dmz 확인 / 생성${NC}"
+
+# veth-sur MTU 기준으로 통일 (기존 잔여 인터페이스 MTU 불일치 방지)
+MTU=$(ip link show "$VETH_SUR" | grep -oP 'mtu \K[0-9]+')
+
 if ip link show "$VETH_DMZ" &>/dev/null; then
-  ok "veth-dmz 존재 (건너뜀)"
+  ok "veth-dmz 존재"
+  # MTU 불일치 보정
+  CUR_MTU=$(ip link show "$VETH_DMZ" | grep -oP 'mtu \K[0-9]+')
+  if [ "$CUR_MTU" != "$MTU" ]; then
+    ip link set "$VETH_DMZ"    mtu "$MTU"
+    ip link set "$VETH_DMZ_SW" mtu "$MTU"
+    ok "MTU 불일치 보정: $CUR_MTU → $MTU"
+  else
+    ok "MTU 일치: $MTU"
+  fi
 else
-  # veth-sur MTU에 맞춤 (ContainerLab 기본값 9500)
-  MTU=$(ip link show "$VETH_SUR" | grep -oP 'mtu \K[0-9]+')
   ip link add "$VETH_DMZ" type veth peer name "$VETH_DMZ_SW"
   ip link set "$VETH_DMZ"    mtu "$MTU"
   ip link set "$VETH_DMZ_SW" mtu "$MTU"
@@ -54,6 +65,8 @@ else
     warn "sw-dmz 브리지 없음 — DMZ 추가 시:  ip link set $VETH_DMZ_SW master $SW_DMZ_BRIDGE"
   fi
 fi
+
+ip link set "$VETH_DMZ" promisc on
 
 # ── 3. Suricata 시작 ─────────────────────────────────────────────────────────
 echo -e "\n${BOLD}[3/3] Suricata 시작${NC}"
