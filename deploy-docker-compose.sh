@@ -55,7 +55,9 @@ net_add router veth-ext-r eth1 10.0.1.1/24 ""
 ip link add veth-sur type veth peer name veth-sur-r
 net_add router veth-sur-r eth2 10.0.10.1/24 ""
 ip link set veth-sur up
-echo "  ✔ veth-sur 생성 완료 (Suricata 연결은 start-suricata.sh 에서)"
+ip link set veth-sur promisc on
+ip link set veth-sur master sw-dmz
+echo "  ✔ veth-sur → sw-dmz 연결 (Router eth2 ↔ DMZ 직결, Suricata IDS 모니터링)"
 
 # ── 3. DMZ 컨테이너 → sw-dmz 연결 ────────────────────────────────────────────
 echo "[3/5] DMZ 컨테이너 연결"

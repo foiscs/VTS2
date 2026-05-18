@@ -39,28 +39,25 @@ vars:
 #
 #  Suricata --network host 실행 시 호스트의 veth 이름 직접 참조
 # =============================================================================
+# =============================================================================
+#  NFQ IPS 설정
+#  iptables NFQUEUE → Suricata --nfq 로 패킷 전달
+#  veth-sur이 sw-dmz 브리지에 연결된 상태에서 동작
+# =============================================================================
+nfq:
+  mode: accept          # 기본 PASS, drop 룰 매칭 시 차단
+  failed-open: yes      # Suricata 장애 시 트래픽 통과 (서비스 보호)
+  batchcount: 20
+  max-pending-packets: 4096
+
 af-packet:
   - interface: veth-sur
     cluster-id: 98
     cluster-type: cluster_flow
-    defrag: no              # inline IPS에서 defrag 비권장
-    use-mmap: yes
-    tpacket-v3: yes
-    copy-mode: ips          # 인라인 IPS: 차단 가능
-    copy-iface: veth-dmz    # 패킷을 veth-dmz 로 전달 (또는 드롭)
-    buffer-size: 134217728  # 128MB (바이트 단위 정수)
-    ring-size: 2048
-    block-size: 65536       # fragmented IP packet 수용 크기
-
-  - interface: veth-dmz
-    cluster-id: 97
-    cluster-type: cluster_flow
     defrag: no
     use-mmap: yes
     tpacket-v3: yes
-    copy-mode: ips          # 인라인 IPS: 차단 가능
-    copy-iface: veth-sur    # 패킷을 veth-sur 로 전달 (또는 드롭)
-    buffer-size: 134217728  # 128MB
+    buffer-size: 134217728
     ring-size: 2048
     block-size: 65536
 
@@ -79,7 +76,7 @@ detect-engine:
 stream:
   memcap: 64mb
   checksum-validation: no   # 가상 환경에서 체크섬 오류 무시
-  inline: no
+  inline: yes
   reassembly:
     memcap: 256mb
     depth: 1mb

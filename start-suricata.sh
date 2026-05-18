@@ -1,10 +1,13 @@
 #!/usr/bin/env bash
 # =============================================================================
-#  start-suricata.sh  — Suricata AF_PACKET inline IPS 시작
+#  start-suricata.sh  — Suricata NFQ IPS 시작
 #
-#  1. veth-sur 확인  (없으면 clab 배포 먼저)
-#  2. veth-dmz 없으면 생성 + sw-dmz 연결
-#  3. Suricata 시작 (--network host)
+#  구조: Router ↔ veth-sur ↔ sw-dmz ↔ DMZ
+#         br_netfilter + iptables NFQUEUE → Suricata --nfq
+#
+#  1. veth-sur 확인 + sw-dmz 브리지 연결 확인
+#  2. br_netfilter 로드 + iptables NFQ 규칙 설정
+#  3. Suricata 시작 (NFQ 모드)
 # =============================================================================
 set -euo pipefail
 
@@ -13,9 +16,8 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SURICATA_IMAGE="jasonish/suricata:8.0.4-amd64"
 SURICATA_CONTAINER="suricata-ips"
 VETH_SUR="veth-sur"
-VETH_DMZ="veth-dmz"
-VETH_DMZ_SW="veth-dmz-sw"
 SW_DMZ_BRIDGE="sw-dmz"
+NFQ_NUM=0
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'; BOLD='\033[1m'
 ok()  { echo -e "  ${GREEN}✔${NC} $*"; }
@@ -24,52 +26,41 @@ die() { echo -e "\n${RED}[FATAL]${NC} $*"; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "root 권한 필요:  sudo $0"
 
-# ── 1. veth-sur 확인 ─────────────────────────────────────────────────────────
+# ── 1. veth-sur 확인 + sw-dmz 연결 ──────────────────────────────────────────
 echo -e "\n${BOLD}[1/3] veth-sur 확인${NC}"
 ip link show "$VETH_SUR" &>/dev/null \
-  || die "veth-sur 없음 → 먼저 실행:  sudo ./deploy-router-only.sh"
+  || die "veth-sur 없음 → 먼저 실행:  sudo ./deploy-docker-compose.sh"
 ip link set "$VETH_SUR" up
 ip link set "$VETH_SUR" promisc on
-ok "veth-sur UP + promisc"
 
-# ── 2. veth-dmz 없으면 생성 ──────────────────────────────────────────────────
-echo -e "\n${BOLD}[2/3] veth-dmz 확인 / 생성${NC}"
-
-# veth-sur MTU 기준으로 통일 (기존 잔여 인터페이스 MTU 불일치 방지)
-MTU=$(ip link show "$VETH_SUR" | grep -oP 'mtu \K[0-9]+')
-
-if ip link show "$VETH_DMZ" &>/dev/null; then
-  ok "veth-dmz 존재"
-  # MTU 불일치 보정
-  CUR_MTU=$(ip link show "$VETH_DMZ" | grep -oP 'mtu \K[0-9]+')
-  if [ "$CUR_MTU" != "$MTU" ]; then
-    ip link set "$VETH_DMZ"    mtu "$MTU"
-    ip link set "$VETH_DMZ_SW" mtu "$MTU"
-    ok "MTU 불일치 보정: $CUR_MTU → $MTU"
-  else
-    ok "MTU 일치: $MTU"
-  fi
+# sw-dmz 브리지에 연결되어 있지 않으면 연결
+MASTER=$(ip link show "$VETH_SUR" | grep -oP 'master \K\S+' || true)
+if [ "$MASTER" != "$SW_DMZ_BRIDGE" ]; then
+  ip link set "$VETH_SUR" master "$SW_DMZ_BRIDGE"
+  ok "veth-sur → $SW_DMZ_BRIDGE 연결"
 else
-  ip link add "$VETH_DMZ" type veth peer name "$VETH_DMZ_SW"
-  ip link set "$VETH_DMZ"    mtu "$MTU"
-  ip link set "$VETH_DMZ_SW" mtu "$MTU"
-  ip link set "$VETH_DMZ"    up
-  ip link set "$VETH_DMZ"    promisc on
-  ip link set "$VETH_DMZ_SW" up
-  ok "veth-dmz ↔ veth-dmz-sw 생성 + promisc  (MTU $MTU)"
-
-  if ip link show "$SW_DMZ_BRIDGE" &>/dev/null; then
-    ip link set "$VETH_DMZ_SW" master "$SW_DMZ_BRIDGE"
-    ok "veth-dmz-sw → $SW_DMZ_BRIDGE 연결"
-  else
-    warn "sw-dmz 브리지 없음 — DMZ 추가 시:  ip link set $VETH_DMZ_SW master $SW_DMZ_BRIDGE"
-  fi
+  ok "veth-sur 이미 $SW_DMZ_BRIDGE 연결됨"
 fi
 
-ip link set "$VETH_DMZ" promisc on
+# ── 2. br_netfilter + iptables NFQ 규칙 ──────────────────────────────────────
+echo -e "\n${BOLD}[2/3] br_netfilter + NFQ 규칙 설정${NC}"
 
-# ── 3. Suricata 시작 ─────────────────────────────────────────────────────────
-echo -e "\n${BOLD}[3/3] Suricata 시작${NC}"
+# br_netfilter 로드 (브리지 트래픽을 iptables로 전달)
+modprobe br_netfilter 2>/dev/null || warn "br_netfilter 이미 로드됨"
+sysctl -w net.bridge.bridge-nf-call-iptables=1 -q
+ok "br_netfilter 활성화"
+
+# 기존 NFQ 규칙 제거 (중복 방지)
+iptables -D FORWARD -i "$VETH_SUR" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass 2>/dev/null || true
+iptables -D FORWARD -o "$VETH_SUR" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass 2>/dev/null || true
+
+# 새 NFQ 규칙 추가 (veth-sur 양방향 — 외부↔DMZ 트래픽 전량)
+iptables -I FORWARD -i "$VETH_SUR" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass
+iptables -I FORWARD -o "$VETH_SUR" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass
+ok "iptables NFQUEUE 규칙 설정 (queue $NFQ_NUM, bypass)"
+
+# ── 3. Suricata 시작 (NFQ 모드) ───────────────────────────────────────────────
+echo -e "\n${BOLD}[3/3] Suricata 시작 (NFQ IPS)${NC}"
 docker rm -f "$SURICATA_CONTAINER" 2>/dev/null || true
 mkdir -p /var/log/suricata
 
@@ -83,8 +74,8 @@ docker run -d \
   -v "$SCRIPT_DIR/configs/suricata":/etc/suricata \
   -v /var/log/suricata:/var/log/suricata \
   "$SURICATA_IMAGE" \
-  -c /etc/suricata/suricata.yaml --af-packet -v
+  -c /etc/suricata/suricata.yaml --nfq -v
 
-ok "컨테이너 시작: $SURICATA_CONTAINER"
+ok "컨테이너 시작: $SURICATA_CONTAINER (NFQ 모드)"
 echo -e "\n  로그:  docker logs -f $SURICATA_CONTAINER"
 echo ""
