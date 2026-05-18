@@ -79,7 +79,7 @@ detect-engine:
 stream:
   memcap: 64mb
   checksum-validation: no   # 가상 환경에서 체크섬 오류 무시
-  inline: yes
+  inline: no
   reassembly:
     memcap: 256mb
     depth: 1mb
