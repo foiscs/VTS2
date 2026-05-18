@@ -143,14 +143,19 @@ sudo ./setup-port-forward.sh
 | 1007001 | DMZ→External 비HTTP 아웃바운드 | alert |
 | 1009001–1009002 | 외부→Intranet/DB 직접 접근 | alert |
 
-### fw-int iptables
+### fw-int iptables (`DMZ ↔ Intranet 경계`)
 
-| 출발 | 목적 | 포트 | 정책 |
-|------|------|------|------|
-| DVWA (10.0.10.10) | WAS (10.0.20.10) | 3306 | ALLOW |
-| Spring (10.0.10.20) | WAS (10.0.20.10) | 3306 | ALLOW |
-| WAS (10.0.20.10) | MySQL (10.0.30.10) | 3306 | ALLOW |
-| 그 외 | — | — | DROP |
+FORWARD 기본 정책: **DROP**
+
+| 출발 IP | 목적 IP | 프로토콜 | 포트 | 방향 | 정책 |
+|---------|---------|---------|------|------|------|
+| 10.0.10.10 (DVWA) | 10.0.20.10 (WAS) | TCP | 3306 | → | ALLOW |
+| 10.0.20.10 (WAS) | 10.0.10.10 (DVWA) | TCP | 3306 | ← | ALLOW (ESTABLISHED) |
+| 10.0.10.20 (Spring) | 10.0.20.10 (WAS) | TCP | 3306 | → | ALLOW |
+| 10.0.20.10 (WAS) | 10.0.10.20 (Spring) | TCP | 3306 | ← | ALLOW (ESTABLISHED) |
+| 10.0.20.10 (WAS) | 10.0.30.10 (MySQL) | TCP | 3306 | → | ALLOW |
+| 10.0.30.10 (MySQL) | 10.0.20.10 (WAS) | TCP | 3306 | ← | ALLOW (ESTABLISHED) |
+| ANY | ANY | ANY | ANY | — | DROP |
 
 ---
 
@@ -211,3 +216,37 @@ VTS2/
     └── mysql/
         └── init.sql             # spring DB 초기화
 ```
+
+## VM 호스트 사양
+
+| 항목 | 사양 |
+|------|------|
+| OS | Ubuntu |
+| Memory | 4GB |
+| Processors | 2 Core |
+| Disk | 30GB |
+
+## 컨테이너 리소스 사용량
+
+| NAME | CPU % | MEM USAGE | MEM % |
+|------|-------|-----------|-------|
+| router/F/W | 0.05% | 7MB | 0.18% |
+| suricata-ips | 0.5% | 14MB | 0.40% |
+| dvwa | 0.01% | 18MB | 0.53% |
+| spring | 0.3% | 300MB | 8.86% |
+| fw-int | 0.05% | 5MB | 0.14% |
+| was | 0.3% | 9MB | 0.26% |
+| mysqlserver1 | 0.5% | 80MB | 2.39% |
+| **TOTAL** | **1.71%** | **433MB** | **12.76%** |
+
+## 이미지 디스크 사용량
+
+| IMAGE | DISK USAGE | CONTENT SIZE |
+|-------|------------|--------------|
+| frrouting/frr:latest | 230MB | 70.3MB |
+| jasonish/suricata:8.0.4-amd64 | 586MB | 141MB |
+| mysql:8.0 | 1.1GB | 249MB |
+| proxysql/proxysql:latest | 682MB | 176MB |
+| vts-spring:latest | 1.16GB | 385MB |
+| vulnerables/web-dvwa:local | 935MB | 178MB |
+| **TOTAL (6 images)** | **4.69GB** | **1.20GB** |
