@@ -1,6 +1,12 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# 스크립트 위치로 이동 (어디서 실행해도 docker-compose.yml 찾을 수 있도록)
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
+[ "$(id -u)" -eq 0 ] || { echo "[FATAL] root 권한 필요: sudo $0"; exit 1; }
+
 # ── 헬퍼 ─────────────────────────────────────────────────────────────────────
 pid_of() { docker inspect -f '{{.State.Pid}}' "$1"; }
 
@@ -44,15 +50,12 @@ ip addr add 10.0.1.100/24 dev veth-ext
 ip link set veth-ext up
 net_add router veth-ext-r eth1 10.0.1.1/24 ""
 
-# router (eth2) ↔ suricata (in1) — Suricata 인라인 입력
-ip link add veth-sur   type veth peer name veth-sur-r
-net_add router   veth-sur-r   eth2       10.0.10.1/24 ""
-net_add suricata veth-sur     eth-in1    ""            ""   # IP 불필요 (inline)
-
-# suricata (in2) ↔ sw-dmz — Suricata 인라인 출력
-ip link add veth-dmz type veth peer name veth-dmz-br
-net_add suricata veth-dmz    eth-in2    ""            ""   # IP 불필요 (inline)
-br_add_port sw-dmz veth-dmz-br
+# router (eth2) → veth-sur 호스트 측 끝 (Suricata 입력)
+# Suricata 쪽 연결은 start-suricata.sh 에서 처리
+ip link add veth-sur type veth peer name veth-sur-r
+net_add router veth-sur-r eth2 10.0.10.1/24 ""
+ip link set veth-sur up
+echo "  ✔ veth-sur 생성 완료 (Suricata 연결은 start-suricata.sh 에서)"
 
 # ── 3. DMZ 컨테이너 → sw-dmz 연결 ────────────────────────────────────────────
 echo "[3/5] DMZ 컨테이너 연결"

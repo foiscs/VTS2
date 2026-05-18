@@ -1,0 +1,79 @@
+version: '3.8'
+
+# =============================================================================
+#  docker-compose.yml — VTS2 네트워크 보안 실습 랩
+#
+#  모든 컨테이너는 network_mode: none 으로 기동
+#  브리지/veth/IP 설정은 deploy-compose.sh 에서 처리
+#
+#  실행 순서:
+#    1. sudo ./deploy-compose.sh          ← 컨테이너 기동 + 네트워크 설정
+#    2. sudo ./start-suricata.sh          ← Suricata IPS 시작
+#    3. 브라우저: http://10.0.10.10/setup.php  ← DVWA DB 초기화
+# =============================================================================
+
+services:
+
+  router:
+    image: frrouting/frr:latest
+    container_name: router
+    network_mode: none
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      net.ipv4.ip_forward: 1
+      net.ipv6.conf.all.disable_ipv6: 1
+    volumes:
+      - ./configs/frr/router:/etc/frr
+    restart: unless-stopped
+
+  dvwa:
+    image: vulnerables/web-dvwa:local
+    container_name: dvwa
+    network_mode: none
+    volumes:
+      - ./DockerContainers/DVWA/config.inc.php:/var/www/html/config/config.inc.php
+    restart: unless-stopped
+
+  spring:
+    image: vts-spring:latest
+    container_name: spring
+    network_mode: none
+    restart: unless-stopped
+
+  fw-int:
+    image: frrouting/frr:latest
+    container_name: fw-int
+    network_mode: none
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    sysctls:
+      net.ipv4.ip_forward: 1
+      net.ipv6.conf.all.disable_ipv6: 1
+    volumes:
+      - ./configs/frr/fw-int:/etc/frr
+    restart: unless-stopped
+
+  was:
+    image: proxysql/proxysql:latest
+    container_name: was
+    network_mode: none
+    volumes:
+      - ./configs/proxysql/proxysql.cnf:/etc/proxysql.cnf
+    restart: unless-stopped
+
+  mysqlserver1:
+    image: mysql:8.0
+    container_name: mysqlserver1
+    network_mode: none
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpass
+      MYSQL_DATABASE: dvwa
+      MYSQL_USER: dvwa
+      MYSQL_PASSWORD: dvwapass
+    volumes:
+      - ./DockerContainers/mysql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    command: --default-authentication-plugin=mysql_native_password
+    restart: unless-stopped
