@@ -87,7 +87,7 @@ docker run -d \
   -v "$SCRIPT_DIR/configs/suricata":/etc/suricata \
   -v /var/log/suricata:/var/log/suricata \
   "$SURICATA_IMAGE" \
-  -c /etc/suricata/suricata.yaml --nfq -v
+  -c /etc/suricata/suricata.yaml -q "$NFQ_NUM" -v
 
 ok "컨테이너 시작: $SURICATA_CONTAINER (NFQ IPS 모드)"
 
