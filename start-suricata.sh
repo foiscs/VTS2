@@ -59,16 +59,23 @@ fi
 # --queue-bypass: Suricata 미기동 시 패킷 드롭 방지
 echo -e "\n${BOLD}[Phase 8] iptables NFQUEUE 룰 설정${NC}"
 
-# 중복 방지: 기존 룰 제거 후 재추가
-iptables -D FORWARD -i "$VETH_SUR" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass 2>/dev/null || true
-iptables -D FORWARD -o "$VETH_SUR" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass 2>/dev/null || true
+# br_netfilter 환경에서 브리지 트래픽은 iptables에서
+# 포트(veth-sur)가 아닌 브리지(sw-dmz) 인터페이스로 보임
+# → NFQUEUE 룰도 sw-dmz 기준으로 설정해야 함
 
-iptables -I FORWARD -i "$VETH_SUR" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass
-iptables -I FORWARD -o "$VETH_SUR" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass
-ok "FORWARD -i/-o $VETH_SUR → NFQUEUE $NFQ_NUM (--queue-bypass 활성)"
+# 중복 방지: 기존 룰 제거 후 재추가 (veth-sur 잔존 룰도 함께 정리)
+iptables -D FORWARD -i "$VETH_SUR"      -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass 2>/dev/null || true
+iptables -D FORWARD -o "$VETH_SUR"      -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass 2>/dev/null || true
+iptables -D FORWARD -i "$SW_DMZ_BRIDGE" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass 2>/dev/null || true
+iptables -D FORWARD -o "$SW_DMZ_BRIDGE" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass 2>/dev/null || true
+
+# ContainerLab의 sw-dmz ACCEPT 룰보다 앞에 삽입해야 먼저 걸림
+iptables -I FORWARD -i "$SW_DMZ_BRIDGE" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass
+iptables -I FORWARD -o "$SW_DMZ_BRIDGE" -j NFQUEUE --queue-num "$NFQ_NUM" --queue-bypass
+ok "FORWARD -i/-o $SW_DMZ_BRIDGE → NFQUEUE $NFQ_NUM (--queue-bypass 활성)"
 
 echo -e "  적용된 NFQUEUE 룰:"
-iptables -L FORWARD -n --line-numbers | grep NFQUEUE | awk '{print "    " $0}'
+iptables -L FORWARD -n -v --line-numbers | grep NFQUEUE | awk '{print "    " $0}'
 
 # ── Phase 9. Suricata 시작 ────────────────────────────────────────────────────
 # NFQUEUE 룰 완료 후 시작 — 큐를 Suricata가 인계받으면 bypass 모드 해제 (RC⑦)
