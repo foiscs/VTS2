@@ -228,6 +228,14 @@ ok "route  10.0.10.0/24 via 10.0.1.1"
 ip route replace 10.0.20.0/24 via 10.0.1.1 dev veth-ext
 ok "route  10.0.20.0/24 via 10.0.1.1"
 
+# ── 룰 파일 권한 설정 ────────────────────────────────────────────────────────
+RULES_FILE="$SCRIPT_DIR/configs/suricata/rules/local.rules"
+if [ -f "$RULES_FILE" ]; then
+  chown "$SUDO_USER":"$SUDO_USER" "$RULES_FILE" 2>/dev/null || true
+  chmod 664 "$RULES_FILE"
+  ok "룰 파일 권한 설정: $RULES_FILE"
+fi
+
 # ── 완료 ─────────────────────────────────────────────────────────────────────
 echo ""
 echo -e "  ${BOLD}배포 완료 ✔${NC}"

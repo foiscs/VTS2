@@ -29,6 +29,14 @@ die() { echo -e "\n${RED}[FATAL]${NC} $*"; exit 1; }
 
 [ "$(id -u)" -eq 0 ] || die "root 권한 필요:  sudo $0"
 
+# ── 룰 파일 권한 설정 ────────────────────────────────────────────────────────
+RULES_FILE="$SCRIPT_DIR/configs/suricata/rules/local.rules"
+if [ -f "$RULES_FILE" ]; then
+  chown "$SUDO_USER":"$SUDO_USER" "$RULES_FILE" 2>/dev/null || true
+  chmod 664 "$RULES_FILE"
+  ok "룰 파일 권한 설정: $RULES_FILE"
+fi
+
 # ── Phase 0. 커널 준비 ────────────────────────────────────────────────────────
 # br_netfilter 없으면 브리지 트래픽이 iptables NFQUEUE를 통과하지 않음 (RC①)
 echo -e "\n${BOLD}[Phase 0] 커널 준비 (br_netfilter + sysctl)${NC}"
