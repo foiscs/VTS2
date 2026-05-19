@@ -27,10 +27,17 @@ die() { echo -e "\n${RED}[FATAL]${NC} $*"; exit 1; }
 VETH_EXT="veth-ext"
 DVWA_IP="10.0.10.10"
 DVWA_PORT="80"
+PHP_IP="10.0.10.11"
+DVWA_PORT="80"
+JUICE_IP="10.0.10.12"
+JUICE_PORT="3000"
 SPRING_IP="10.0.10.20"
+
 SPRING_PORT="8080"
 EXT_PORT_DVWA="8001"
-EXT_PORT_SPRING="8002"
+EXT_PORT_PHP="8002"
+EXT_PORT_JUICE="8003"
+EXT_PORT_SPRING="8004"
 
 # 외부 인터페이스 자동 감지
 EXT_IFACE=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
@@ -41,12 +48,20 @@ if [ "${1:-}" = "--flush" ]; then
   echo "포트 포워딩 정리 중..."
   iptables -t nat -D PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_DVWA" \
     -j DNAT --to-destination "$DVWA_IP:$DVWA_PORT" 2>/dev/null && ok "DVWA DNAT 제거" || ok "없음"
+  iptables -t nat -D PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_PHP" \
+    -j DNAT --to-destination "$PHP_IP:$PHP_PORT" 2>/dev/null && ok "PHP DNAT 제거" || ok "없음"
+  iptables -t nat -D PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_JUICE" \
+    -j DNAT --to-destination "$JUICE_IP:$JUICE_PORT" 2>/dev/null && ok "JUICE DNAT 제거" || ok "없음"
   iptables -t nat -D PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_SPRING" \
     -j DNAT --to-destination "$SPRING_IP:$SPRING_PORT" 2>/dev/null && ok "Spring DNAT 제거" || ok "없음"
   iptables -t nat -D POSTROUTING -o "$VETH_EXT" \
     -j MASQUERADE 2>/dev/null && ok "MASQUERADE 제거" || ok "없음"
   iptables -D FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
     --dport "$DVWA_PORT" -j ACCEPT 2>/dev/null || true
+  iptables -D FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
+    --dport "$PHP_PORT" -j ACCEPT 2>/dev/null || true
+  iptables -D FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
+    --dport "$JUICE_PORT" -j ACCEPT 2>/dev/null || true
   iptables -D FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
     --dport "$SPRING_PORT" -j ACCEPT 2>/dev/null || true
   iptables -D FORWARD -i "$VETH_EXT" -o "$EXT_IFACE" \
@@ -75,7 +90,21 @@ iptables -t nat -C PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_DVWA" \
        -j DNAT --to-destination "$DVWA_IP:$DVWA_PORT"
 ok "DVWA   host:$EXT_PORT_DVWA → $DVWA_IP:$DVWA_PORT"
 
-# Spring: host:8002 → 10.0.10.20:8080
+# PHP: host:8002 → 10.0.10.11:80
+iptables -t nat -C PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_PHP" \
+ -j DNAT --to-destination "$PHP_IP:$PHP_PORT" 2>/dev/null \
+|| iptables -t nat -A PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_PHP" \
+ -j DNAT --to-destination "$PHP_IP:$PHP_PORT"
+ok "PHP   host:$EXT_PORT_PHP → $PHP_IP:$PHP_PORT"
+
+# DVWA: host:8003 → 10.0.10.12:3000
+iptables -t nat -C PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_JUICE" \
+ -j DNAT --to-destination "$JUICE_IP:$JUICE_PORT" 2>/dev/null \
+|| iptables -t nat -A PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_JUICE" \
+ -j DNAT --to-destination "$JUICE_IP:$JUICE_PORT"
+ok "JUICE   host:$EXT_PORT_JUICE → $JUICE_IP:$JUICE_PORT"
+
+# Spring: host:8004 → 10.0.10.20:8080
 iptables -t nat -C PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_SPRING" \
   -j DNAT --to-destination "$SPRING_IP:$SPRING_PORT" 2>/dev/null \
   || iptables -t nat -A PREROUTING -i "$EXT_IFACE" -p tcp --dport "$EXT_PORT_SPRING" \
@@ -97,6 +126,18 @@ iptables -C FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
 ok "FORWARD $EXT_IFACE → $VETH_EXT :$DVWA_PORT ACCEPT"
 
 iptables -C FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
+ --dport "$PHP_PORT" -j ACCEPT 2>/dev/null \
+|| iptables -A FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
+ --dport "$PHP_PORT" -j ACCEPT
+ok "FORWARD $EXT_IFACE → $VETH_EXT :$PHP_PORT ACCEPT"
+
+iptables -C FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
+ --dport "$JUICE_PORT" -j ACCEPT 2>/dev/null \
+|| iptables -A FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
+ --dport "$JUICE_PORT" -j ACCEPT
+ok "FORWARD $EXT_IFACE → $VETH_EXT :$JUICE_PORT ACCEPT"
+
+iptables -C FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
   --dport "$SPRING_PORT" -j ACCEPT 2>/dev/null \
   || iptables -A FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
        --dport "$SPRING_PORT" -j ACCEPT
@@ -113,7 +154,10 @@ HOST_IP=$(ip -4 addr show "$EXT_IFACE" | grep -oP '(?<=inet )\S+' | cut -d/ -f1)
 echo ""
 echo -e "  ${BOLD}접속 주소:${NC}"
 echo -e "    DVWA   →  http://${HOST_IP}:${EXT_PORT_DVWA}/"
+echo -e "    PHP   →  http://${HOST_IP}:${EXT_PORT_PHP}/"
+echo -e "    JUICE   →  http://${HOST_IP}:${EXT_PORT_JUICE}/"
 echo -e "    Spring →  http://${HOST_IP}:${EXT_PORT_SPRING}/main/login"
 echo ""
 echo -e "  정리:  ${BOLD}sudo ./setup-port-forward.sh --flush${NC}"
 echo ""
+
