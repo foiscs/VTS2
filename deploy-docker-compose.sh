@@ -28,6 +28,8 @@ DVWA_IMAGE="vulnerables/web-dvwa:local"
 DVWA_CONTEXT="$SCRIPT_DIR/DockerContainers/DVWA"
 SPRING_IMAGE="vts-spring:latest"
 SPRING_CONTEXT="$SCRIPT_DIR/DockerContainers/SpringServer"
+PHP_IMAGE="vts-php:latest"
+PHP_CONTEXT="$SCRIPT_DIR/DockerContainers/PhpServer"
 
 GREEN='\033[0;32m'; YELLOW='\033[1;33m'; RED='\033[0;31m'; NC='\033[0m'; BOLD='\033[1m'
 ok()  { echo -e "  ${GREEN}✔${NC} $*"; }
@@ -99,6 +101,7 @@ build_image() {
 
 build_image "$DVWA_IMAGE"   "$DVWA_CONTEXT"   "DVWA"
 build_image "$SPRING_IMAGE" "$SPRING_CONTEXT" "Spring"
+build_image "$PHP_IMAGE"    "$PHP_CONTEXT"    "PHP"
 
 # ── Phase 3. docker compose up ────────────────────────────────────────────────
 echo -e "\n${BOLD}[Phase 3/8] docker compose up -d${NC}"
@@ -108,7 +111,7 @@ ok "compose 기동 요청 완료"
 # ── Phase 4. 컨테이너 PID 폴링 ───────────────────────────────────────────────
 # compose -d 리턴 시점 ≠ PID 안정화 시점 → sleep 3 대신 실제 폴링 (RC④)
 echo -e "\n${BOLD}[Phase 4/8] 컨테이너 PID 안정화 대기${NC}"
-for cname in router dvwa spring fw-int was mysqlserver1; do
+for cname in router dvwa php juice spring fw-int was mysqlserver1; do
   printf "  대기: %-20s" "$cname"
   wait_pid "$cname"
   printf "PID=%-6s %b\n" "$(get_pid "$cname")" "${GREEN}✔${NC}"
@@ -137,12 +140,22 @@ ip link add veth-dvwa type veth peer name veth-dvwa-br
 br_add_port sw-dmz veth-dvwa-br
 net_add dvwa veth-dvwa eth1 10.0.10.10/24 10.0.10.1
 
-# ④ Spring → sw-dmz
+# ④ PHP → sw-dmz
+ip link add veth-php type veth peer name veth-php-br
+br_add_port sw-dmz veth-php-br
+net_add php veth-php eth1 10.0.10.30/24 10.0.10.1
+
+# ⑤ Juice Shop → sw-dmz
+ip link add veth-juice type veth peer name veth-juice-br
+br_add_port sw-dmz veth-juice-br
+net_add juice veth-juice eth1 10.0.10.40/24 10.0.10.1
+
+# ⑥ Spring → sw-dmz
 ip link add veth-spring type veth peer name veth-spring-br
 br_add_port sw-dmz veth-spring-br
 net_add spring veth-spring eth1 10.0.10.20/24 10.0.10.1
 
-# ⑤ fw-int: eth1→sw-dmz / eth2→sw-intranet / eth3→sw-db
+# ⑦ fw-int: eth1→sw-dmz / eth2→sw-intranet / eth3→sw-db
 ip link add veth-fwdmz type veth peer name veth-fwdmz-br
 br_add_port sw-dmz veth-fwdmz-br
 
@@ -162,12 +175,12 @@ for pair in "veth-fwdmz eth1 10.0.10.254/24" "veth-fwint eth2 10.0.20.1/24" "vet
 done
 ok "fw-int  eth1(DMZ)/eth2(Intranet)/eth3(DB) 배선 완료"
 
-# ⑥ WAS → sw-intranet
+# ⑧ WAS → sw-intranet
 ip link add veth-was type veth peer name veth-was-br
 br_add_port sw-intranet veth-was-br
 net_add was veth-was eth1 10.0.20.10/24 10.0.20.1
 
-# ⑦ MySQL → sw-db
+# ⑨ MySQL → sw-db
 ip link add veth-mysql type veth peer name veth-mysql-br
 br_add_port sw-db veth-mysql-br
 net_add mysqlserver1 veth-mysql eth1 10.0.30.10/24 10.0.30.1
@@ -190,6 +203,14 @@ ok "fw-int  default gw → 10.0.10.1"
 pid_dvwa=$(get_pid dvwa)
 nsenter -t "$pid_dvwa" -n -- ip route replace 10.0.20.0/24 via 10.0.10.254
 ok "dvwa  10.0.20.0/24 via 10.0.10.254"
+
+pid_php=$(get_pid php)
+nsenter -t "$pid_php" -n -- ip route replace 10.0.20.0/24 via 10.0.10.254
+ok "php  10.0.20.0/24 via 10.0.10.254"
+
+pid_juice=$(get_pid juice)
+nsenter -t "$pid_juice" -n -- ip route replace 10.0.20.0/24 via 10.0.10.254
+ok "juice  10.0.20.0/24 via 10.0.10.254"
 
 pid_spring=$(get_pid spring)
 nsenter -t "$pid_spring" -n -- ip route replace 10.0.20.0/24 via 10.0.10.254

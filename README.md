@@ -19,9 +19,11 @@ FRR 라우터, Suricata 인라인 IPS, DMZ/Intranet/DB 존 분리, 취약 웹앱
         │
    veth-sur ──── sw-dmz (브리지)
         │              ├── DVWA        10.0.10.10   포트 80
-   [Suricata IPS]      ├── Spring      10.0.10.20   포트 8080
-   NFQ 모드            └── fw-int eth1 10.0.10.254
-   NFQUEUE on sw-dmz            │ eth2 (10.0.20.1)
+   [Suricata IPS]      ├── PHP         10.0.10.30   포트 80
+   NFQ 모드            ├── Juice Shop  10.0.10.40   포트 3000
+   NFQUEUE on sw-dmz   ├── Spring      10.0.10.20   포트 8080
+                       └── fw-int eth1 10.0.10.254
+                                │ eth2 (10.0.20.1)
                           sw-intranet (브리지)
                                 └── WAS / ProxySQL  10.0.20.10
                                 │ eth3 (10.0.30.1)
@@ -138,7 +140,9 @@ sudo ./cleanup.sh
 | 서비스 | 내부 주소 | 외부 포트 | 계정 |
 |--------|-----------|-----------|------|
 | DVWA | http://10.0.10.10/ | 8001 | admin / password |
-| Spring | http://10.0.10.20:8080/main/login | 8002 | 회원가입 후 사용 |
+| PHP Server | http://10.0.10.30/ | 8002 | — |
+| Juice Shop | http://10.0.10.40:3000/ | 8003 | 회원가입 후 사용 |
+| Spring | http://10.0.10.20:8080/main/login | 8004 | 회원가입 후 사용 |
 | ProxySQL Admin | 10.0.20.10:6032 | — | admin / admin |
 | MySQL | 10.0.30.10:3306 | — | dvwa / dvwapass |
 
@@ -242,6 +246,7 @@ VTS2/
 │       └── proxysql.cnf         # ProxySQL 설정
 └── DockerContainers/
     ├── DVWA/                    # DVWA 이미지 (vulnerables/web-dvwa:local)
+    ├── PhpServer/               # PHP 취약 서버 (vts-php:latest, CVE-2024-2961)
     ├── SpringServer/            # Spring4Shell 취약 서버 (vts-spring:latest)
     └── mysql/
         └── init.sql             # DB 초기화

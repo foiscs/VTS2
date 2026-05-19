@@ -96,6 +96,10 @@ echo -e "\n${BOLD}[2/5] clab deploy${NC}"
 clab deploy -t "$TOPO_FILE" --reconfigure
 ok "ContainerLab 배포 완료"
 
+# veth-sur → sw-dmz 연결 (router eth2 ↔ DMZ 브리지)
+ip link set veth-sur master sw-dmz 2>/dev/null && ok "veth-sur → sw-dmz 연결" || warn "veth-sur master 설정 실패"
+ip link set veth-sur promisc on
+
 # ── 3. veth-ext IP 설정 ──────────────────────────────────────────────────────
 echo -e "\n${BOLD}[3/5] veth-ext IP 설정${NC}"
 ip addr flush dev "$VETH_EXT" 2>/dev/null || true
