@@ -35,9 +35,14 @@ SPRING_IP="10.0.10.20"
 
 SPRING_PORT="8080"
 EXT_PORT_DVWA="8001"
+<<<<<<< HEAD
 EXT_PORT_PHP="8002"
 EXT_PORT_JUICE="8003"
 EXT_PORT_SPRING="8004"
+=======
+EXT_PORT_SPRING="8002"
+VM_SUBNET="192.168.146.0/24"   # VM NAT 서브넷 (PC 라우팅용)
+>>>>>>> 75c83713d3a6e2132cac371911d88ca3fa5cf948
 
 # 외부 인터페이스 자동 감지
 EXT_IFACE=$(ip route get 8.8.8.8 2>/dev/null | grep -oP 'dev \K\S+' | head -1)
@@ -56,6 +61,8 @@ if [ "${1:-}" = "--flush" ]; then
     -j DNAT --to-destination "$SPRING_IP:$SPRING_PORT" 2>/dev/null && ok "Spring DNAT 제거" || ok "없음"
   iptables -t nat -D POSTROUTING -o "$VETH_EXT" \
     -j MASQUERADE 2>/dev/null && ok "MASQUERADE 제거" || ok "없음"
+  iptables -t nat -D POSTROUTING -s "$VM_SUBNET" -d 10.0.0.0/8 \
+    -j MASQUERADE 2>/dev/null && ok "PC 직접접근 MASQUERADE 제거" || ok "없음"
   iptables -D FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
     --dport "$DVWA_PORT" -j ACCEPT 2>/dev/null || true
   iptables -D FORWARD -i "$EXT_IFACE" -o "$VETH_EXT" -p tcp \
@@ -115,6 +122,12 @@ ok "Spring host:$EXT_PORT_SPRING → $SPRING_IP:$SPRING_PORT"
 iptables -t nat -C POSTROUTING -o "$VETH_EXT" -j MASQUERADE 2>/dev/null \
   || iptables -t nat -A POSTROUTING -o "$VETH_EXT" -j MASQUERADE
 ok "MASQUERADE on $VETH_EXT"
+
+# PC → 내부망 직접 접근용 마스커레이드 (VM NAT 환경)
+# PC에서 route add 10.0.x.x/24 via 192.168.146.128 설정 시 리턴 경로 확보
+iptables -t nat -C POSTROUTING -s "$VM_SUBNET" -d 10.0.0.0/8 -j MASQUERADE 2>/dev/null \
+  || iptables -t nat -A POSTROUTING -s "$VM_SUBNET" -d 10.0.0.0/8 -j MASQUERADE
+ok "MASQUERADE  $VM_SUBNET → 10.0.0.0/8 (PC 직접 접근 리턴 경로)"
 
 # ── FORWARD 규칙 ──────────────────────────────────────────────────────────────
 echo -e "\n${BOLD}[3/3] FORWARD 규칙 추가${NC}"

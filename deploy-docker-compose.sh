@@ -175,6 +175,14 @@ net_add mysqlserver1 veth-mysql eth1 10.0.30.10/24 10.0.30.1
 # ── Phase 6. 컨테이너 추가 라우팅 ────────────────────────────────────────────
 echo -e "\n${BOLD}[Phase 6/8] 컨테이너 추가 라우팅 설정${NC}"
 
+# router: Intranet/DB 존 경로 (fw-int 경유)
+# 없으면 외부→Intranet/DB 트래픽이 라우터에서 드롭되어 Suricata가 못 봄
+pid_router=$(get_pid router)
+nsenter -t "$pid_router" -n -- ip route replace 10.0.20.0/24 via 10.0.10.254
+ok "router  10.0.20.0/24 via 10.0.10.254 (fw-int)"
+nsenter -t "$pid_router" -n -- ip route replace 10.0.30.0/24 via 10.0.10.254
+ok "router  10.0.30.0/24 via 10.0.10.254 (fw-int)"
+
 pid_fw=$(get_pid fw-int)
 nsenter -t "$pid_fw" -n -- ip route replace default via 10.0.10.1
 ok "fw-int  default gw → 10.0.10.1"
@@ -196,30 +204,10 @@ ok "was  10.0.30.0/24 via 10.0.20.1"
 echo -e "\n${BOLD}[Phase 7/8] fw-int iptables 정책${NC}"
 
 FW=fw-int
-docker exec $FW iptables -P FORWARD DROP
-
-# DVWA(10.0.10.10) → WAS(10.0.20.10):3306
-docker exec $FW iptables -A FORWARD \
-  -s 10.0.10.10 -d 10.0.20.10 -p tcp --dport 3306 -j ACCEPT
-docker exec $FW iptables -A FORWARD \
-  -s 10.0.20.10 -d 10.0.10.10 -p tcp --sport 3306 \
-  -m state --state ESTABLISHED -j ACCEPT
-
-# Spring(10.0.10.20) → WAS(10.0.20.10):3306
-docker exec $FW iptables -A FORWARD \
-  -s 10.0.10.20 -d 10.0.20.10 -p tcp --dport 3306 -j ACCEPT
-docker exec $FW iptables -A FORWARD \
-  -s 10.0.20.10 -d 10.0.10.20 -p tcp --sport 3306 \
-  -m state --state ESTABLISHED -j ACCEPT
-
-# WAS(10.0.20.10) → MySQL(10.0.30.10):3306
-docker exec $FW iptables -A FORWARD \
-  -s 10.0.20.10 -d 10.0.30.10 -p tcp --dport 3306 -j ACCEPT
-docker exec $FW iptables -A FORWARD \
-  -s 10.0.30.10 -d 10.0.20.10 -p tcp --sport 3306 \
-  -m state --state ESTABLISHED -j ACCEPT
-
-ok "fw-int iptables: DVWA→WAS, Spring→WAS, WAS→MySQL ACCEPT / 그 외 FORWARD DROP"
+# 모의해킹 테스트 환경 — 전체 포워딩 허용
+# 실제 차단은 Suricata가 담당 (drop 룰 추가 시 IPS 동작)
+docker exec $FW iptables -P FORWARD ACCEPT
+ok "fw-int iptables: FORWARD ACCEPT (모의해킹 환경 — Suricata가 탐지/차단 담당)"
 
 # ── Phase 8. 호스트 라우팅 ────────────────────────────────────────────────────
 echo -e "\n${BOLD}[Phase 8/8] 호스트 라우팅${NC}"
