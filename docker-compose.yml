@@ -36,6 +36,18 @@ services:
       - ./DockerContainers/DVWA/config.inc.php:/var/www/html/config/config.inc.php
     restart: unless-stopped
 
+  php:
+    image: vts-php:latest
+    container_name: php
+    network_mode: none
+    restart: unless-stopped
+
+  juice:
+    image: bkimminich/juice-shop:latest
+    container_name: juice
+    network_mode: none
+    restart: unless-stopped
+
   spring:
     image: vts-spring:latest
     container_name: spring
